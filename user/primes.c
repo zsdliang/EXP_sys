@@ -30,7 +30,7 @@ int main(int argc,char* argv[]){
         while(firstNum > 0)
         {   
             counter++;
-            printf("prime: %d\n",firstNum);
+            printf("prime %d\n",firstNum);
             pipe(p2);
             pNum = fork();
             if(pNum > 0)
