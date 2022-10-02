@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -88,7 +89,10 @@ sys_trace(void)
 uint64
 sys_sysinfo(void)
 {
-	
+	struct sysinfo info;
+	if (argaddr(0, (uint64*)&info) < 0)
+		return -1;
+	info.freemem = calmem();	
 	return 0;
 }
 
