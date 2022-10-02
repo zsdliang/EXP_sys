@@ -86,6 +86,13 @@ sys_trace(void)
 }
 
 uint64
+sys_sysinfo(void)
+{
+	
+	return 0;
+}
+
+uint64
 sys_kill(void)
 {
 	int pid;

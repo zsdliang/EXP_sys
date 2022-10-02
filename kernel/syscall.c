@@ -149,7 +149,8 @@ static char sysname[32][8] = {"",
 						 "link",
 						 "mkdir",
 						 "close",
-						 "trace"};
+						 "trace",
+						 "sysinfo"};
 
 void syscall(void)
 {
