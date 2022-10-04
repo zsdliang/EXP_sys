@@ -83,16 +83,23 @@ sys_trace(void)
 	if (argint(0, &mask) < 0)
 		return -1;
 	myproc()->mask = mask;
-	return mask;
+	return 0;
 }
 
 uint64
 sys_sysinfo(void)
 {
-	struct sysinfo info;
-	if (argaddr(0, (uint64*)&info) < 0)
+	struct proc *p = myproc();
+	uint64 info_addr;
+	struct sysinfo info_temp;
+	if (argaddr(0, &info_addr) < 0)
 		return -1;
-	info.freemem = calmem();	
+	info_temp.freemem = calfreemem();	
+	info_temp.nproc = calfreeproc();
+	info_temp.freefd = calfreefd();
+
+	if(copyout(p->pagetable,info_addr,(char *)&info_temp,sizeof(info_temp))<0)
+		return -1;
 	return 0;
 }
 

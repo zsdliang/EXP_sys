@@ -80,13 +80,14 @@ void *kalloc(void)
 }
 
 
-int calmem(void)
+int calfreemem(void)
 {
 	int freepagenum = 0;
 	struct run *firstr_keep = kmem.freelist;
 	while(kmem.freelist)
 	{
 		freepagenum++;
+		kmem.freelist = kmem.freelist->next;
 	}
 	kmem.freelist = firstr_keep;
 	return freepagenum*PGSIZE;

@@ -721,3 +721,17 @@ void procdump(void)
 		printf("\n");
 	}
 }
+
+int calfreeproc(void)
+{
+	int i;
+	int freeprocnum = 0;
+	for(i = 0;i < NPROC;i++)
+	{
+		if(proc[i].killed||proc[i].pid == 0)
+		{
+			freeprocnum++;
+		}
+	}
+	return freeprocnum;
+}
