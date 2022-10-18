@@ -96,8 +96,12 @@ void
 release(struct spinlock *lk)
 {
   if(!holding(lk))
+  {
     panic("release");
+  }
 
+  else 
+  {
   lk->cpu = 0;
 
   // Tell the C compiler and the CPU to not move loads or stores
@@ -118,6 +122,8 @@ release(struct spinlock *lk)
   __sync_lock_release(&lk->locked);
 
   pop_off();
+  }
+  
 }
 
 // Check whether this cpu is holding the lock.
