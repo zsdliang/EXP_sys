@@ -20,6 +20,7 @@ void            brelse(struct buf*);
 void            bwrite(struct buf*);
 void            bpin(struct buf*);
 void            bunpin(struct buf*);
+int             findbucket(int);
 
 // console.c
 void            consoleinit(void);
