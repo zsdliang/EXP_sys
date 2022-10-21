@@ -28,6 +28,7 @@ struct
 {
 	struct spinlock lock[NBUCKETS];
 	struct buf buf[NBUF];
+	int rubucketno;
 
 	// Linked list of all buffers, through prev/next.
 	// Sorted by how recently the buffer was used.
@@ -40,6 +41,7 @@ void binit(void)
 	struct buf *b;
 	int j = 0;
 
+	bcache.rubucketno = 0;
 
 	//init spinlocks of ever buckets
 	for(int i = 0;i < NBUCKETS;i++)
@@ -47,10 +49,19 @@ void binit(void)
 		initlock(&bcache.lock[i], "bcache");
 		bcache.hashbucket[i].prev = &bcache.hashbucket[i];
 		bcache.hashbucket[i].next = &bcache.hashbucket[i];
+		b = bcache.buf;
+		for (j = 0; j < NBUCKETS; j++,b++)
+		{
+			b->next = bcache.hashbucket[j].next;
+			b->prev = &bcache.hashbucket[j];
+			initsleeplock(&b->lock, "buffer");
+			bcache.hashbucket[j].next = b;
+			bcache.hashbucket[j].last = b;
+		}
 	}
 
 	// Create linked list of buffers
-	for (b = bcache.buf; b < bcache.buf + NBUF; b++)
+	for (j = 0; b < bcache.buf + NBUF; b++)
 	{
 		b->next = bcache.hashbucket[j].next;
 		b->prev = &bcache.hashbucket[j];
@@ -69,49 +80,61 @@ bget(uint dev, uint blockno)
 {
 	struct buf *b;
 	int bucketno = blockno % NBUCKETS;
+	int bucketno_shouldbe = blockno % NBUCKETS;
 	// Is the block already cached?
 	
-	acquire(&bcache.lock[bucketno]);
-	for (b = bcache.hashbucket[bucketno].next; b != &bcache.hashbucket[bucketno]; b = b->next)
+	acquire(&bcache.lock[bucketno_shouldbe]);
+	bcache.rubucketno = bucketno;
+	for (b = bcache.hashbucket[bucketno].last; b != &bcache.hashbucket[bucketno]; b = b->prev)
 	{
 		if (b->dev == dev && b->blockno == blockno)
 		{
 			b->refcnt++;
-			release(&bcache.lock[bucketno]);
+			release(&bcache.lock[bucketno_shouldbe]);
 			acquiresleep(&b->lock);
 			return b;
 		}
 	}
-	release(&bcache.lock[bucketno]);
 	
 	// Not cached.
 	// Recycle the least recently used (LRU) unused buffer and steel buffer from other buckets.
-	for(int i = 0;i < 3*NBUCKETS;i++,bucketno = (bucketno+1)%NBUCKETS)
+	for(int i = 0;i < NBUCKETS;i++,bucketno = (bucketno+1)%NBUCKETS)
 	{
-		acquire(&bcache.lock[bucketno]);
-		for (b = bcache.hashbucket[bucketno].prev; b != &bcache.hashbucket[bucketno]; b = b->prev)
+		if(bucketno != bucketno_shouldbe)
 		{
-			if (b->refcnt == 0)
+			if(bcache.lock[bucketno].locked)
 			{
-				b->dev = dev;
-				b->blockno = blockno;
-				b->valid = 0;
-				b->refcnt = 1;
-				if(i % NBUCKETS != 0)
-				{
-					b->next->prev = b->prev;
-					b->prev->next = b->next;
-					b->next = bcache.hashbucket[bucketno].next;
-					b->prev = &bcache.hashbucket[bucketno];
-					bcache.hashbucket[bucketno].next->prev = b;
-					bcache.hashbucket[bucketno].next = b;
-				}
-				release(&bcache.lock[bucketno]);
-				acquiresleep(&b->lock);
-				return b;
+				continue;
 			}
+			acquire(&bcache.lock[bucketno]);
 		}
-		release(&bcache.lock[bucketno]);
+		b = bcache.hashbucket[bucketno].next;
+		if (b != &bcache.hashbucket[bucketno] && b->refcnt == 0)
+		{
+			b->dev = dev;
+			b->blockno = blockno;
+			b->valid = 0;
+			b->refcnt = 1;
+			
+			b->next->prev = b->prev;
+			b->prev->next = b->next;
+			b->next = &bcache.hashbucket[bucketno_shouldbe];
+			b->prev = bcache.hashbucket[bucketno_shouldbe].last;
+			bcache.hashbucket[bucketno_shouldbe].last->next = b;
+			bcache.hashbucket[bucketno_shouldbe].last = b;
+			
+			if(bucketno != bucketno_shouldbe) 
+			{
+				release(&bcache.lock[bucketno]);
+			}
+			release(&bcache.lock[bucketno_shouldbe]);
+			acquiresleep(&b->lock);
+			return b;
+		}
+		if(bucketno != bucketno_shouldbe) 
+		{
+			release(&bcache.lock[bucketno]);
+		}
 	}
 	panic("bget: no buffers");
 }
@@ -153,12 +176,24 @@ void brelse(struct buf *b)
 	if (b->refcnt == 0)
 	{			
 		// no one is waiting for it.
-		b->next->prev = b->prev;
-		b->prev->next = b->next;
-		b->next = bcache.hashbucket[bucketno].next;
-		b->prev = &bcache.hashbucket[bucketno];
-		bcache.hashbucket[bucketno].next->prev = b;
-		bcache.hashbucket[bucketno].next = b;
+		if(b == bcache.hashbucket[bucketno].last)
+		{
+			bcache.hashbucket[bucketno].last = b->prev;
+			b->prev->next = b->next;
+			b->next = bcache.hashbucket[bucketno].next;
+			b->prev = &bcache.hashbucket[bucketno];
+			bcache.hashbucket[bucketno].next->prev = b;
+			bcache.hashbucket[bucketno].next = b;
+		}
+		else 
+		{
+			b->next->prev = b->prev;
+			b->prev->next = b->next;
+			b->next = bcache.hashbucket[bucketno].next;
+			b->prev = &bcache.hashbucket[bucketno];
+			bcache.hashbucket[bucketno].next->prev = b;
+			bcache.hashbucket[bucketno].next = b;
+		}
 	}
 	release(&bcache.lock[bucketno]);
 }
