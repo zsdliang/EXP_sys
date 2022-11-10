@@ -450,3 +450,46 @@ test_pagetable()
   uint64 gsatp = MAKE_SATP(kernel_pagetable);
   return satp != gsatp;
 }
+
+void vmprint(pagetable_t pagetable)
+{
+  // // there are 2^9 = 512 PTEs in a page table.
+  // for(int i = 0; i < 512; i++){
+  //   pte_t pte = pagetable[i];
+  //   if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+  //     printf("%p\n",pte);
+  //     // this PTE points to a lower-level page table.
+  //     uint64 child = PTE2PA(pte);
+  //     vmprint((pagetable_t)child); 
+  //   } else if(pte & PTE_V){
+  //     printf("%p\n",pte);
+  //   }
+  // }
+
+  printf("page table %p\n",pagetable);
+
+  //traverse page table 0
+  for(int i = 0; i < 512; i++) {
+    pte_t pte0 = pagetable[i];
+    if(pte0 & PTE_V) {
+      pagetable_t pagetable1 = (pagetable_t) PTE2PA(pte0);
+      printf("||%d:pte %p pa %p\n",i,pte0,pagetable1);
+        //traverse page table 1
+        for(int j = 0; j < 512; j++) {
+          pte_t pte1 = pagetable1[j];
+          if(pte1 & PTE_V) {
+            pagetable_t pagetable2 = (pagetable_t) PTE2PA(pte1);
+            printf("|| ||%d:pte %p pa %p\n",j,pte1,pagetable2);
+            //traverse page table 2
+            for(int k = 0; k < 512; k++) { 
+              pte_t pte2 = pagetable2[k];
+              if(pte2 & PTE_V) {
+                printf("|| || ||%d:pte %p pa %p\n",k,pte2,(pagetable_t)PTE2PA(pte2));
+              }
+            }
+          }
+          
+      }
+    }
+  }
+}
