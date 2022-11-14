@@ -47,6 +47,28 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+//create a kpagetable for the user process with mapping to the real kernal pagetable
+pagetable_t kpagetableinit()
+{
+  pagetable_t kpagetable = (pagetable_t) kalloc();
+  memset(kpagetable,0,PGSIZE);
+
+  if(mappages(kpagetable,UART0,        PGSIZE,                UART0,                 PTE_R | PTE_W) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,VIRTIO0,      PGSIZE,                VIRTIO0,               PTE_R | PTE_W) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,CLINT,        0x10000,               CLINT,                 PTE_R | PTE_W) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,PLIC,         0x400000,              PLIC,                  PTE_R | PTE_W) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,KERNBASE,     (uint64)etext-KERNBASE,KERNBASE,              PTE_R | PTE_X) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,(uint64)etext,PHYSTOP-(uint64)etext, (uint64)etext,         PTE_R | PTE_W) < 0) {panic("error when mapping kernal pagetable");}
+
+  if(mappages(kpagetable,TRAMPOLINE,   PGSIZE,                (uint64)trampoline,    PTE_R | PTE_X) < 0) {panic("error when mapping kernal pagetable");}
+  return kpagetable;
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void

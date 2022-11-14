@@ -37,6 +37,7 @@ procinit(void)
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
+      p->kstack_pa = (uint64)pa;
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
@@ -121,6 +122,16 @@ found:
     return 0;
   }
 
+  //ceate kpagetable in user process
+  p->kpagetable = kpagetableinit();
+  if(p->kpagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  if(mappages(p->kpagetable,p->kstack,PGSIZE,p->kstack_pa,PTE_R|PTE_W)) {panic("error when creat kernal stack mapping");}
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +152,9 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable)
+    proc_freekpagetable(p->kpagetable);
+  p->kpagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -193,6 +207,28 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+//free kpagetable without free its physical content
+void proc_freekpagetable(pagetable_t kpagetable1) {
+  for(int i = 0;i < 512;i++) {
+    pte_t pte1 = kpagetable1[i];
+    if(pte1 & PTE_V) {
+      pagetable_t kpagetable2 = (pagetable_t)PTE2PA(pte1);
+
+      for(int j = 0;j < 512;j++) {
+        pte_t pte2 = kpagetable2[j];
+        pagetable_t kpagetable3 = (pagetable_t)PTE2PA(pte2);
+        if(pte2 & PTE_V) {
+          kfree((void*)kpagetable3);
+          kpagetable2[j] = 0; 
+        }
+      }
+      kfree((void*)kpagetable2);
+      kpagetable1[i] = 0;
+    }
+  }
+  kfree((void*)kpagetable1);
 }
 
 // a user program that calls exec("/init")
@@ -473,7 +509,14 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        //if processed existed,use the kernel page table of the process
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
+
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
