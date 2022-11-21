@@ -266,6 +266,7 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  copyu2kvm(p->pagetable,p->kpagetable,0,p->sz);
   release(&p->lock);
 }
 
@@ -279,9 +280,15 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    //防止用户页表与内核页表重叠
+    if(PGROUNDUP(sz + n) >= PLIC) {
+      printf("no more mem\n");
+      return -1;
+    }
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    copyu2kvm(p->pagetable,p->kpagetable,sz-n,sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -330,6 +337,9 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  //复制新进程的用户页表到新进程的内核页表
+  copyu2kvm(np->pagetable,np->kpagetable,0,np->sz);
 
   release(&np->lock);
 
